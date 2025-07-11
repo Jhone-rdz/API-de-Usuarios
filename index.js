@@ -6,15 +6,16 @@ const PORT = 3000;
 
 const multer = require('multer');
 const path = require('path');
+app.use('/uploads', express.static('uploads'));
 
-// Configuração do multer
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'uploads/'); // pasta onde os arquivos serão salvos
+    cb(null, 'uploads/');
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
-    cb(null, Date.now() + ext); // nome único para o arquivo
+    cb(null, Date.now() + ext); 
   }
 });
 
@@ -75,7 +76,7 @@ app.post('/registro', async (req, res) => {
 
 
 const jwt = require('jsonwebtoken');
-const SECRET = 'chave-secreta-supersegura'; // use variável de ambiente no futuro
+const SECRET = 'chave-secreta-supersegura';
 
 app.post('/login', async (req, res) => {
   const { nome, senha } = req.body;
@@ -138,21 +139,40 @@ app.delete('/usuarios/:id', async (req, res) => {
 });
 
 
-app.post('/upload', upload.single('arquivo'), (req, res) => {
+app.post('/upload', autenticarToken, upload.single('arquivo'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ erro: 'Nenhum arquivo enviado' });
   }
 
-  res.json({
-    mensagem: 'Arquivo enviado com sucesso',
-    nomeOriginal: req.file.originalname,
-    nomeSalvo: req.file.filename,
-    caminho: req.file.path
-  });
+  // Caminho padronizado (evita barras invertidas no Windows)
+  const caminhoArquivo = req.file.path.replace(/\\/g, '/');
+
+  try {
+    // Atualiza o avatar do usuário logado no banco
+    await pool.query('UPDATE usuarios SET avatar = $1 WHERE id = $2', [
+      caminhoArquivo,
+      req.usuario.id
+    ]);
+
+    res.json({
+      mensagem: 'Arquivo enviado e avatar atualizado com sucesso',
+      nomeOriginal: req.file.originalname,
+      nomeSalvo: req.file.filename,
+      caminho: caminhoArquivo
+    });
+  } catch (err) {
+    res.status(500).json({ erro: 'Erro ao salvar avatar no banco', detalhe: err.message });
+  }
 });
 
+app.get('/perfil', autenticarToken, async (req, res) => {
+  const result = await pool.query(
+    'SELECT id, nome, avatar FROM usuarios WHERE id = $1',
+    [req.usuario.id]
+  );
 
-
+  res.json(result.rows[0]);
+});
 
 
 
